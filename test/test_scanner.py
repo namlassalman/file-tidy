@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from main.scanner import scan
+from main.scanner import estimate, scan
 
 
 class ScannerTests(unittest.TestCase):
@@ -48,6 +48,19 @@ class ScannerTests(unittest.TestCase):
             }
             result = scan(settings, io.StringIO(), io.StringIO(), progress_every=0)
             self.assertEqual((result.files, result.bytes), (1, 1))
+
+    def test_estimate_counts_local_files_without_writing_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "A").mkdir()
+            (root / "A" / "a.txt").write_bytes(b"abc")
+            settings = {
+                "source_type": "local",
+                "source_path": str(root),
+                "folders": [],
+                "excluded_folders": [],
+            }
+            self.assertEqual(estimate(settings), {"files": 1, "folders": 2, "bytes": 3})
 
 
 if __name__ == "__main__":

@@ -27,8 +27,8 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 - [x] Development checklist
 - [x] File scanning and inventory
 - [x] Storage usage charts
-- [ ] Duplicate detection
-- [ ] User-approved file changes
+- [ ] Duplicate detection: group identical filenames and byte sizes as high-confidence candidates, preserve complete paths for evidence, allow shortened parent-folder labels in summaries, mark incomplete scans, and require content hashes before automated deletion recommendations.
+- [ ] User-approved file changes: use the aggregated folder table and detailed file table to define the proposed change, run an `rsync` dry run and summarize its potential changes, require explicit approval, then run the transfer with existing destination paths skipped and hidden files excluded when requested. Allow optional manual verification before deleting remaining source files; leave skipped conflicts or errors for review. If a folder was not fully scanned, require manual destination verification and explicit approval before deleting the complete source folder.
 
 ## Planned workflow
 
@@ -68,6 +68,8 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
    ```
 
 Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Inventory records are written as JSONL, with a summary and an error file alongside them.
+
+For a pre-scan count, run `python -m main.scanner --estimate-only`. NAS scans use the GIO metadata walker by default; local scans keep the Python filesystem walker. Long scans can write a checkpoint with `--checkpoint scan-results/inventory.checkpoint.json` and resume with `--resume`. Only a completed scan produces a summary suitable for comparison and reporting.
 
 Generate an interactive, self-contained HTML report from the summary:
 
