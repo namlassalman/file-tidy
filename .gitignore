@@ -1,0 +1,17 @@
+# Python development
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local credentials and scan output
+.env
+.env.*
+!.env.example
+local-data/
+scan-results/
+
+# Editor and OS metadata
+.DS_Store
+.idea/
+.vscode/
