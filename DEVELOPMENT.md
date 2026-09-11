@@ -11,7 +11,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-No application code or third-party dependencies have been added yet. Add dependencies only when an implementation requires them.
+`config.py` loads local settings using the Python standard library. The scanner and interface are not implemented yet. Add dependencies only when an implementation requires them.
+
+Copy `config.example.json` to `config.local.json` and fill in the NAS host, username, share, folders to compare, and exclusions. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the configured share. Keep passwords in the system credential manager or an interactive authentication prompt.
+
+Application code should obtain these values through `from config import load_config` and `settings = load_config()`, rather than hardcoding connection details or personal folder names. Do not print settings into logs or commit real scan output. The public example must contain placeholders only.
 
 ## First working version
 

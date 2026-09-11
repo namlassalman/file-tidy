@@ -8,6 +8,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+config.local.json
 local-data/
 scan-results/
 

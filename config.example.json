@@ -1,0 +1,7 @@
+{
+  "nas_host": "YOUR_NAS_HOST",
+  "nas_username": "YOUR_NAS_USERNAME",
+  "nas_share": "YOUR_SHARE_NAME",
+  "folders": ["FOLDER_TO_COMPARE", "ANOTHER_FOLDER_TO_COMPARE"],
+  "excluded_folders": []
+}
