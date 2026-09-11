@@ -13,12 +13,10 @@ from pathlib import Path
 from .report import _size
 
 CATEGORIES = {
-    "only in PC Data at this path",
-    "only in 85 PC Data at this path",
     "same path and size",
     "different size",
 }
-SOURCES = (("left", "Comparison 1 – PC Data"), ("right", "Comparison 2 – 85 PC Data"))
+SOURCES = (("left", "Comparison 1"), ("right", "Comparison 2"))
 COLORS = ["#367bf5", "#ef6c57", "#f5b82e", "#45a66f", "#9b59b6", "#16a085"]
 SIZE_BANDS = [
     (" > 1 GB", 1024**3, None),
@@ -43,7 +41,15 @@ def _read_rows(path: Path) -> list[dict[str, object]]:
         reader = csv.reader(source)
         next(reader, None)
         for fields in reader:
-            index = next((i for i, value in enumerate(fields) if value in CATEGORIES), None)
+            index = next(
+                (
+                    i
+                    for i, value in enumerate(fields)
+                    if value in CATEGORIES
+                    or (value.startswith("only in ") and value.endswith(" at this path"))
+                ),
+                None,
+            )
             if index is None or index < 2:
                 continue
             rows.append({"path": ",".join(fields[: index - 2]), "left": int(fields[index - 2] or 0), "right": int(fields[index - 1] or 0), "category": fields[index]})

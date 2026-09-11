@@ -27,7 +27,12 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 - [x] Development checklist
 - [x] File scanning and inventory
 - [x] Storage usage charts
-- [ ] Duplicate detection: group identical filenames and byte sizes as high-confidence candidates, preserve complete paths for evidence, allow shortened parent-folder labels in summaries, mark incomplete scans, and require content hashes before automated deletion recommendations.
+- [ ] Overall storage dashboard: make `index.html` summarize the complete inventory by category, file type, size band, and meaningful folder, with an include/exclude-trash control and links to duplicate and folder reports.
+- [x] Drive-wide duplicate candidate tables and interactive evidence reports
+- [ ] Duplicate confirmation: compare meaningful ancestor context so generic folder names such as `Inbox` do not join unrelated collections, then hash selected candidate files before automated deletion recommendations.
+- [ ] Candidate review controls: let the user mark each Master/Secondary relationship as Agree, Disagree, or Needs Review; allow Master/Secondary swapping and optional notes; export decisions locally using stable candidate identifiers.
+- [ ] Small-file candidate workflow: let the user filter and batch candidates below 1 GB, distinguish storage-saving priorities from organizational cleanup, and estimate verification time using both file count and total bytes. Make file-type totals clickable so types such as `.msg` drill down into meaningful folder roots, counts, sizes, and organizational context.
+- [ ] Verified action controls: offer Verify, Sync missing files, Delete fully verified Secondary, and Keep separate. Keep deletion disabled while any Secondary file is missing, conflicting, unreadable, or unverified.
 - [ ] User-approved file changes: use the aggregated folder table and detailed file table to define the proposed change, run an `rsync` dry run and summarize its potential changes, require explicit approval, then run the transfer with existing destination paths skipped and hidden files excluded when requested. Allow optional manual verification before deleting remaining source files; leave skipped conflicts or errors for review. If a folder was not fully scanned, require manual destination verification and explicit approval before deleting the complete source folder.
 
 ## Planned workflow
@@ -69,6 +74,20 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
 
 Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Each JSONL inventory record includes the relative path, absolute path, URI, byte size, file type, path depth, file modification time, and parent-folder modification time. A summary and error file are written alongside the inventory.
 
+For large NAS inventories, prefer running File Tidy on the NAS host against its local filesystem mount. This avoids a separate SMB metadata request for every file and folder. See [Scanning large NAS volumes efficiently](docs/NAS_SCANNING.md) for the setup and direct-output workflow.
+
+When the scanner runs directly on a NAS host or another small Linux device, write large scan results to a dedicated folder on the storage volume instead of the device's system drive or SD card. Supplying the inventory and error paths places all three outputs in that folder and avoids a separate copy step:
+
+```bash
+python -m main.scanner \
+  --config config.local.json \
+  --output /path/on/nas/file-tidy-results/inventory.jsonl \
+  --errors /path/on/nas/file-tidy-results/inventory-errors.jsonl \
+  --progress-every 10000
+```
+
+The scanner creates `inventory.summary.json` beside the inventory. Choose an output folder that remains local to the user and is excluded from Git.
+
 For a pre-scan count, run `python -m main.scanner --estimate-only`. NAS scans use the GIO metadata walker by default; local scans keep the Python filesystem walker. Long scans can write a checkpoint with `--checkpoint scan-results/inventory.checkpoint.json` and resume with `--resume`. Only a completed scan produces a summary suitable for comparison and reporting.
 
 Generate an interactive, self-contained HTML report from the summary:
@@ -86,6 +105,18 @@ python -m main.comparison_report scan-results/comparison.csv
 ```
 
 This creates a local HTML index with exploratory charts for overlap categories, file types, path depth, and folder concentration. Each top-level folder links to a separate detail page with filtering and sortable file rows. It shows candidate overlap; content hashes are required to confirm duplicate files.
+
+For a completed drive-wide inventory, build the Master/Secondary candidate tables and their interactive report:
+
+```bash
+python -m main.duplicates scan-results/inventory.jsonl
+python -m main.duplicate_report \
+  scan-results/duplicate-folders.csv \
+  scan-results/duplicate-files.csv \
+  --output scan-results/duplicates.html
+```
+
+The aggregate table ranks related folders using normalized exact filenames, byte sizes, folder-name similarity, overlap coverage, and modification activity. Before action, generic leaf names such as `Inbox`, `Sent Items`, or `Camera` must also be checked against meaningful ancestor context so a shared leaf name does not join unrelated organizations or collections. The detail table preserves the complete locations supporting each candidate. Matching names and sizes are high-confidence candidates, but only matching content hashes confirm duplicate files. Candidate savings from overlapping folder rows must not be added together.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 
