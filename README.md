@@ -4,6 +4,23 @@ File Tidy helps you understand storage usage, find duplicate files, and review o
 
 This is a small prototype in development. The first version will work with local folders and accessible network-attached storage (NAS) shares. Dedicated mobile phone and cloud storage integrations are future work.
 
+## Background and motivation
+
+Files accumulate across phones, laptops, desktops, external drives, cloud storage, and NAS devices. Over time, backups overlap, folders become deeply nested, and old copies are difficult to distinguish from the files people still need. Storage costs also continue to rise, while the available space on personal devices and shared storage remains limited.
+
+People need a practical way to understand what is taking up space before deciding what to keep, archive, or remove. A folder with a familiar name is not necessarily a duplicate, and matching file names or sizes do not prove that two files have the same contents. Any useful tool must show its evidence and keep the final decision with the owner of the files.
+
+File Tidy is intended to make that review manageable. It will start by examining folders the user selects, respecting explicit exclusions, and producing a read-only inventory. It will then summarize storage usage, identify areas that deserve closer attention, and make recommendations that the user can review before any change is applied.
+
+The project is designed for four common storage sources:
+
+- Mobile phones and removable media
+- Cloud storage
+- Desktops and laptops
+- Network-attached storage (NAS)
+
+The initial prototype focuses on local folders and accessible NAS shares so that the scanning and review workflow can be tested before adding dedicated integrations.
+
 ## Current status
 
 - [x] Python configuration loader
@@ -32,8 +49,11 @@ Reports will distinguish potential savings from verified duplicate content. Actu
 Use Python 3.11 or later. No third-party dependencies are currently required.
 
 1. Copy `config.example.json` to `config.local.json`.
-2. Enter your NAS host, username, share, folders to compare, and exclusions. Folder entries are relative to the share.
-3. Load the settings from Python:
+2. Choose a source by setting `source_type` to `local` or `nas`.
+   - For a local folder, set `source_path` to a path such as `C:/Users/YourName/Documents` or `/home/yourname/Documents`. Use forward slashes in JSON, or escape Windows backslashes as `C:\\Users\\YourName\\Documents`.
+   - For an NAS share, set `nas_host`, `nas_username`, and `nas_share`. Folder entries are relative to that share.
+3. Add folders to scan and exclusions. An empty `folders` list means the source root is the starting point.
+4. Load the settings from Python:
 
    ```python
    from config import load_config
@@ -41,7 +61,7 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
    settings = load_config()
    ```
 
-This loads configuration only; it does not connect to storage or start a scan. The current configuration describes a NAS share; local-folder selection will be added with the scanner.
+This loads configuration only; it does not connect to storage or start a scan. The scanner will use `source_path` for local sources and the NAS fields for NAS sources.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 

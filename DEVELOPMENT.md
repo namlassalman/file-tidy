@@ -13,20 +13,20 @@ source .venv/bin/activate
 
 `config.py` loads local settings using the Python standard library. The scanner and interface are not implemented yet. Add dependencies only when an implementation requires them.
 
-Copy `config.example.json` to `config.local.json` and fill in the NAS host, username, share, folders to compare, and exclusions. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the configured share. Keep passwords in the system credential manager or an interactive authentication prompt.
+The first version must support both local folders and accessible NAS shares. Copy `config.example.json` to `config.local.json`, set `source_type` to `local` or `nas`, and fill in the matching source settings. For a local source, set `source_path` to the folder to scan. For an NAS source, fill in the host, username, and share. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the selected source. Keep passwords in the system credential manager or an interactive authentication prompt.
 
 Application code should obtain these values through `from config import load_config` and `settings = load_config()`, rather than hardcoding connection details or personal folder names. Do not print settings into logs or commit real scan output. The public example must contain placeholders only.
 
 ## First working version
 
-- [ ] Let the user select a folder and exclusions before scanning.
+- [ ] Let the user select a local folder or accessible NAS share and specify exclusions before scanning.
 - [ ] Inventory file paths, types, sizes, and folder depths without changing files; report access errors and progress.
 - [ ] Show file counts and total size by type in one chart, and highlight deeply nested folders.
 - [ ] Let the user choose folders for deeper analysis; estimate time from observed scanning speed and explain uncertainty.
 - [ ] Compare duplicate candidates by size, then verify matching content with hashes before recommending removal.
 - [ ] Present recommendations and their evidence. Require explicit approval of the specific changes before applying them.
 
-Begin with a local folder or an already accessible NAS share. Additional phone and cloud integrations can follow if time permits.
+Validate the first implementation against both a local folder and an already accessible NAS share. Additional phone and cloud integrations can follow if time permits.
 
 ## Lessons from the initial NAS investigation
 
