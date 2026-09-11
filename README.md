@@ -25,7 +25,7 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 
 - [x] Python configuration loader
 - [x] Development checklist
-- [ ] File scanning and inventory
+- [x] File scanning and inventory
 - [ ] Storage usage charts
 - [ ] Duplicate detection
 - [ ] User-approved file changes
@@ -56,12 +56,12 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
 4. Load the settings from Python:
 
    ```python
-   from config import load_config
+   from main.config import load_config
 
    settings = load_config()
    ```
 
-This loads configuration only; it does not connect to storage or start a scan. The scanner will use `source_path` for local sources and the NAS fields for NAS sources.
+Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Inventory records are written as JSONL, with a summary and an error file alongside them.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 

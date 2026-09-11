@@ -2,9 +2,35 @@
 
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.local.json")
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.local.json"
+
+
+def is_excluded(relative_path: str, excluded_folders: list[str]) -> bool:
+    """Return whether a relative path is an excluded folder or its descendant.
+
+    A bare folder name such as ``WBEM`` matches that folder name anywhere in
+    the tree, case-insensitively. A path such as ``System/Cache`` matches that
+    path and everything below it, also case-insensitively.
+    """
+    path_parts = tuple(
+        part.casefold()
+        for part in PurePosixPath(str(relative_path).replace("\\", "/")).parts
+    )
+    for excluded in excluded_folders:
+        excluded_parts = tuple(
+            part.casefold()
+            for part in PurePosixPath(str(excluded).replace("\\", "/")).parts
+        )
+        if not excluded_parts:
+            continue
+        if len(excluded_parts) == 1 and excluded_parts[0] in path_parts:
+            return True
+        if path_parts[: len(excluded_parts)] == excluded_parts:
+            return True
+    return False
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:

@@ -4,6 +4,7 @@
   "nas_host": "YOUR_NAS_HOST",
   "nas_username": "YOUR_NAS_USERNAME",
   "nas_share": "YOUR_SHARE_NAME",
+  "nas_mount_path": "/path/to/already-mounted/share",
   "folders": [],
   "excluded_folders": []
 }

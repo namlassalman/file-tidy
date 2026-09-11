@@ -11,11 +11,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-`config.py` loads local settings using the Python standard library. The scanner and interface are not implemented yet. Add dependencies only when an implementation requires them.
+`main/config.py` loads local settings using the Python standard library, and `main/scanner.py` provides the first read-only inventory implementation. Add dependencies only when an implementation requires them.
 
-The first version must support both local folders and accessible NAS shares. Copy `config.example.json` to `config.local.json`, set `source_type` to `local` or `nas`, and fill in the matching source settings. For a local source, set `source_path` to the folder to scan. For an NAS source, fill in the host, username, and share. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the selected source. Keep passwords in the system credential manager or an interactive authentication prompt.
+The first version must support both local folders and accessible NAS shares. Copy `config.example.json` to `config.local.json`, set `source_type` to `local` or `nas`, and fill in the matching source settings. For a local source, set `source_path` to the folder to scan. For an NAS source, fill in the host, username, share, and `nas_mount_path` for the already mounted share. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the selected source. Exclusions are case-insensitive; a bare entry such as `WBEM` skips every folder with that name and all descendants, while a path such as `System/Cache` skips that path and its descendants. Keep passwords in the system credential manager or an interactive authentication prompt.
 
-Application code should obtain these values through `from config import load_config` and `settings = load_config()`, rather than hardcoding connection details or personal folder names. Do not print settings into logs or commit real scan output. The public example must contain placeholders only.
+Application code should obtain these values through `from main.config import load_config` and `settings = load_config()`, rather than hardcoding connection details or personal folder names. Do not print settings into logs or commit real scan output. The public example must contain placeholders only.
+
+Run tests with `python -m unittest discover -s test`.
 
 ## First working version
 
