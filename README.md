@@ -26,7 +26,7 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 - [x] Python configuration loader
 - [x] Development checklist
 - [x] File scanning and inventory
-- [ ] Storage usage charts
+- [x] Storage usage charts
 - [ ] Duplicate detection
 - [ ] User-approved file changes
 
@@ -43,6 +43,12 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 Matching names or file sizes identify possible duplicates. Matching content hashes confirm identical file contents, including files with different names or locations. Folder names alone do not establish that entire folders are duplicates.
 
 Reports will distinguish potential savings from verified duplicate content. Actual space savings depend on which copies are approved for removal and how the storage system handles deleted files. Verifying a sample does not verify all candidates.
+
+## Privacy and local data
+
+File Tidy is designed to keep scan data on the user’s machine. File contents, file names, inventories, manifests, reports, and access-error logs are written locally to the configured output directory. The scanner does not upload files or manifests to a remote service. Network-attached storage is read through an already accessible connection, and the scanner does not mount shares or handle passwords.
+
+Local configuration belongs in the ignored `config.local.json` file. Generated inventories and reports belong in the ignored `scan-results/` directory, so they are not included in a public Git commit unless a user explicitly moves or force-adds them.
 
 ## Local setup
 
@@ -62,6 +68,22 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
    ```
 
 Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Inventory records are written as JSONL, with a summary and an error file alongside them.
+
+Generate an interactive, self-contained HTML report from the summary:
+
+```bash
+python -m main.report scan-results/inventory.summary.json
+```
+
+The report includes storage-by-file-type bars, sortable details, totals, and access-error counts. It uses no third-party charting library.
+
+To visualize the earlier folder comparison while a new scan runs:
+
+```bash
+python -m main.comparison_report scan-results/comparison.csv
+```
+
+This creates a local HTML index with exploratory charts for overlap categories, file types, path depth, and folder concentration. Each top-level folder links to a separate detail page with filtering and sortable file rows. It shows candidate overlap; content hashes are required to confirm duplicate files.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 

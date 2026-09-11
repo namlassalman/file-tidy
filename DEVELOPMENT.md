@@ -11,7 +11,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-`main/config.py` loads local settings using the Python standard library, and `main/scanner.py` provides the first read-only inventory implementation. Add dependencies only when an implementation requires them.
+`main/config.py` loads local settings using the Python standard library, `main/scanner.py` provides the first read-only inventory implementation, and `main/report.py` generates an interactive HTML summary. Add dependencies only when an implementation requires them.
 
 The first version must support both local folders and accessible NAS shares. Copy `config.example.json` to `config.local.json`, set `source_type` to `local` or `nas`, and fill in the matching source settings. For a local source, set `source_path` to the folder to scan. For an NAS source, fill in the host, username, share, and `nas_mount_path` for the already mounted share. `config.local.json` is ignored by Git and must stay on your machine. Folder entries are relative to the selected source. Exclusions are case-insensitive; a bare entry such as `WBEM` skips every folder with that name and all descendants, while a path such as `System/Cache` skips that path and its descendants. Keep passwords in the system credential manager or an interactive authentication prompt.
 
@@ -42,3 +42,5 @@ Validate the first implementation against both a local folder and an already acc
 ## Development data
 
 Use synthetic folders for repeatable verification, including empty files, same-size files with different contents, renamed duplicates, exclusions, and inaccessible paths. Keep credentials, real file inventories, reports, and personal files out of Git. Local output belongs in `local-data/` or `scan-results/`, both ignored by Git.
+
+The privacy boundary is local: the scanner writes inventories, manifests, reports, and errors to local output files and does not upload them. Any future network feature must document its data flow and obtain explicit user approval before sending file metadata or contents elsewhere.
