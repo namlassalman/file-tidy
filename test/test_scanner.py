@@ -30,6 +30,10 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(result.files, 1)
             self.assertEqual(records[0]["path"], "Keep/readme.TXT")
             self.assertEqual(records[0]["type"], "txt")
+            self.assertEqual(records[0]["absolute_path"], str(root / "Keep" / "readme.TXT"))
+            self.assertEqual(records[0]["uri"], (root / "Keep" / "readme.TXT").as_uri())
+            self.assertGreater(records[0]["modified_ns"], 0)
+            self.assertGreater(records[0]["parent_modified_ns"], 0)
             self.assertEqual(result.by_type, {"txt": {"files": 1, "bytes": 5}})
             self.assertEqual(error_file.getvalue(), "")
 

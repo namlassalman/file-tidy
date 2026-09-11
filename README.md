@@ -67,7 +67,7 @@ Use Python 3.11 or later. No third-party dependencies are currently required.
    settings = load_config()
    ```
 
-Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Inventory records are written as JSONL, with a summary and an error file alongside them.
+Run a read-only inventory with `python -m main.scanner`. The scanner uses `source_path` for local sources. For an NAS source, set `nas_mount_path` to an already accessible mounted share; it does not handle credentials or mount storage itself. Each JSONL inventory record includes the relative path, absolute path, URI, byte size, file type, path depth, file modification time, and parent-folder modification time. A summary and error file are written alongside the inventory.
 
 For a pre-scan count, run `python -m main.scanner --estimate-only`. NAS scans use the GIO metadata walker by default; local scans keep the Python filesystem walker. Long scans can write a checkpoint with `--checkpoint scan-results/inventory.checkpoint.json` and resume with `--resume`. Only a completed scan produces a summary suitable for comparison and reporting.
 

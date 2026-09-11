@@ -6,6 +6,7 @@ import argparse
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -123,12 +124,12 @@ def _scan_gio_worker(settings: dict, output: TextIO, errors: TextIO, progress_ev
     )
 
 
-def _scan_entries(folder: Path) -> list[tuple[str, int, bool, bool]]:
-    """Return (name, size, is_directory, is_symlink) using GIO metadata."""
+def _scan_entries(folder: Path) -> list[tuple[str, int, bool, bool, int]]:
+    """Return name, size, kind flags, and modification time using GIO."""
     uri = folder.as_uri()
     command = [
         "/usr/bin/gio", "list", "-n", "-a",
-        "standard::name,standard::type,standard::size", uri,
+        "standard::name,standard::type,standard::size,time::modified,time::modified-usec", uri,
     ]
     try:
         completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
@@ -138,15 +139,24 @@ def _scan_entries(folder: Path) -> list[tuple[str, int, bool, bool]]:
         raise OSError(completed.stderr.strip() or "gio list failed")
     entries = []
     for line in completed.stdout.splitlines():
-        fields = line.rsplit("\t", 2)
-        if len(fields) != 3:
+        fields = line.split("\t", 3)
+        if len(fields) < 3:
             continue
-        name, size_text, type_text = fields
+        name, size_text, type_text = fields[:3]
+        attributes = fields[3] if len(fields) == 4 else ""
         try:
             size = int(size_text)
         except ValueError:
             size = 0
-        entries.append((name, size, "directory" in type_text, "symbolic" in type_text))
+        seconds_match = re.search(r"time::modified=(\d+)", attributes)
+        usec_match = re.search(r"time::modified-usec=(\d+)", attributes)
+        modified_ns = (
+            int(seconds_match.group(1)) * 1_000_000_000
+            + (int(usec_match.group(1)) * 1_000 if usec_match else 0)
+            if seconds_match
+            else 0
+        )
+        entries.append((name, size, "directory" in type_text, "symbolic" in type_text, modified_ns))
     return entries
 
 
@@ -195,20 +205,22 @@ def scan(
             continue
         folders += 1
         try:
+            parent_modified_ns = folder.stat().st_mtime_ns
             if use_gio:
                 entries = _scan_entries(folder)
             else:
                 entries = []
                 for entry in os.scandir(folder):
                     try:
-                        entries.append((entry.name, entry.stat(follow_symlinks=False).st_size, entry.is_dir(follow_symlinks=False), entry.is_symlink()))
+                        stat = entry.stat(follow_symlinks=False)
+                        entries.append((entry.name, stat.st_size, entry.is_dir(follow_symlinks=False), entry.is_symlink(), stat.st_mtime_ns))
                     except OSError as exc:
                         raise OSError(f"{entry.name}: {exc}") from exc
         except OSError as exc:
             error_count += 1
             errors.write(json.dumps({"path": relative_folder, "error": str(exc)}) + "\n")
             continue
-        for name, entry_size, is_directory, is_symlink in entries:
+        for name, entry_size, is_directory, is_symlink, modified_ns in entries:
             relative_path = (
                 f"{relative_folder}/{name}" if relative_folder != "." else name
             )
@@ -221,12 +233,17 @@ def scan(
                 errors.write(json.dumps({"path": relative_path, "error": "symlink skipped"}) + "\n")
                 continue
             kind = _file_type(name)
+            absolute_path = (folder / name).absolute()
             record = {
                 "path": relative_path,
                 "source": relative_folder.split("/", 1)[0],
+                "absolute_path": str(absolute_path),
+                "uri": absolute_path.as_uri(),
                 "size": entry_size,
                 "type": kind,
                 "depth": len(PurePosixPath(relative_path).parts) - 1,
+                "modified_ns": modified_ns,
+                "parent_modified_ns": parent_modified_ns,
             }
             output.write(json.dumps(record, ensure_ascii=False) + "\n")
             added_files, added_bytes = _record_stats(record, by_type, by_type_bytes)
@@ -268,10 +285,11 @@ def estimate(settings: dict) -> dict[str, int]:
         if folders % 100 == 0:
             print(f"Estimate visited {folders:,} folders; found {files:,} files", file=sys.stderr, flush=True)
         entries = _scan_entries(folder) if use_gio else [
-            (entry.name, entry.stat(follow_symlinks=False).st_size, entry.is_dir(follow_symlinks=False), entry.is_symlink())
+            (entry.name, stat.st_size, entry.is_dir(follow_symlinks=False), entry.is_symlink(), stat.st_mtime_ns)
             for entry in os.scandir(folder)
+            for stat in [entry.stat(follow_symlinks=False)]
         ]
-        for name, size, is_directory, is_symlink in entries:
+        for name, size, is_directory, is_symlink, _modified_ns in entries:
             relative_path = f"{relative_folder}/{name}" if relative_folder != "." else name
             if is_directory:
                 if not is_excluded(relative_path, settings["excluded_folders"]):

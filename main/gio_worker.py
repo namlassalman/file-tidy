@@ -21,6 +21,12 @@ def excluded(path: str, values: list[str]) -> bool:
     return False
 
 
+def modified_ns(info: Gio.FileInfo) -> int:
+    seconds = info.get_attribute_uint64('time::modified')
+    microseconds = info.get_attribute_uint32('time::modified-usec')
+    return seconds * 1_000_000_000 + microseconds * 1_000
+
+
 def main() -> int:
     payload = json.loads(sys.argv[1])
     root_path = Path(payload['root'])
@@ -51,8 +57,14 @@ def main() -> int:
         relative_folder, folder = stack.pop()
         folders += 1
         try:
+            folder_info = folder.query_info(
+                'time::modified,time::modified-usec',
+                Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+                None,
+            )
+            parent_modified_ns = modified_ns(folder_info)
             enum = folder.enumerate_children(
-                'standard::name,standard::type,standard::size',
+                'standard::name,standard::type,standard::size,time::modified,time::modified-usec',
                 Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
                 None,
             )
@@ -63,9 +75,10 @@ def main() -> int:
                 name = info.get_name()
                 relative_path = f'{relative_folder}/{name}' if relative_folder != '.' else name
                 file_type = info.get_file_type()
+                child = folder.get_child(name)
                 if file_type == Gio.FileType.DIRECTORY:
                     if not excluded(relative_path, excluded_folders):
-                        stack.append((relative_path, folder.get_child(name)))
+                        stack.append((relative_path, child))
                     continue
                 if file_type == Gio.FileType.SYMBOLIC_LINK:
                     batch.append(json.dumps({'_error': {'path': relative_path, 'error': 'symlink skipped'}}))
@@ -74,9 +87,13 @@ def main() -> int:
                 record = {
                     'path': relative_path,
                     'source': relative_path.split('/', 1)[0],
+                    'absolute_path': child.get_path() or child.get_uri(),
+                    'uri': child.get_uri(),
                     'size': info.get_size(),
                     'type': suffix[1:] if suffix else '[no extension]',
                     'depth': len(PurePosixPath(relative_path).parts) - 1,
+                    'modified_ns': modified_ns(info),
+                    'parent_modified_ns': parent_modified_ns,
                 }
                 batch.append(json.dumps(record, ensure_ascii=False))
                 files += 1
