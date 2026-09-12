@@ -24,6 +24,8 @@ Run tests with `python -m unittest discover -s test`.
 - [x] Let the user select a local folder or accessible NAS share and specify exclusions before scanning.
 - [x] Inventory file paths, types, sizes, modification times, and folder depths without changing files; report access errors and progress.
 - [x] Show file counts and total size by type in one chart, and highlight deeply nested folders.
+- [x] Compare two separately completed inventories. Validate their summaries, align optional relative-root prefixes, classify exact-path states, and preserve full evidence for same-name-and-size candidates found at different paths.
+- [x] Generate a bounded interactive cross-drive HTML report with Primary/Secondary folder candidates and drill-down evidence while retaining complete comparison data in local CSV files.
 - [ ] Generate an overall storage `index.html` from the complete inventory. Show total and non-trash storage by category, file type, size band, and meaningful folder, then link to duplicate-candidate and folder drill-down reports.
 - [ ] Let the user choose folders for deeper analysis; estimate time from observed scanning speed and explain uncertainty.
 - [ ] Compare duplicate candidates by filename and size, reject generic folder-name matches when meaningful ancestor context conflicts, then verify matching content with hashes before recommending removal.

@@ -27,6 +27,8 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 - [x] Development checklist
 - [x] File scanning and inventory
 - [x] Storage usage charts
+- [x] Read-only comparison of two completed inventories, including exact-path states and relocated filename-and-size candidates
+- [x] Interactive cross-drive comparison report with Master/Secondary folder candidates, drill-down evidence, bounded file tables, and local file links
 - [ ] Overall storage dashboard: make `index.html` summarize the complete inventory by category, file type, size band, and meaningful folder, with an include/exclude-trash control and links to duplicate and folder reports.
 - [x] Drive-wide duplicate candidate tables and interactive evidence reports
 - [ ] Duplicate confirmation: compare meaningful ancestor context so generic folder names such as `Inbox` do not join unrelated collections, then hash selected candidate files before automated deletion recommendations.
@@ -117,6 +119,32 @@ python -m main.duplicate_report \
 ```
 
 The aggregate table ranks related folders using normalized exact filenames, byte sizes, folder-name similarity, overlap coverage, and modification activity. Before action, generic leaf names such as `Inbox`, `Sent Items`, or `Camera` must also be checked against meaningful ancestor context so a shared leaf name does not join unrelated organizations or collections. The detail table preserves the complete locations supporting each candidate. Matching names and sizes are high-confidence candidates, but only matching content hashes confirm duplicate files. Candidate savings from overlapping folder rows must not be added together.
+
+Compare two independently completed inventories, such as a primary drive and a cold backup:
+
+```bash
+python -m main.inventory_compare \
+  scan-results/primary.jsonl \
+  scan-results/backup.jsonl \
+  --primary-label "Primary" \
+  --backup-label "Cold Backup"
+```
+
+The command validates each inventory against its adjacent `.summary.json` before producing exact-path, relocated-file, folder-candidate, folder-evidence, aggregate CSV, and JSON summary outputs. It classifies paths as present with the same size, conflicting sizes, Primary-only, or Backup-only. It separately groups normalized exact filenames and byte sizes found at different paths. Optional `--primary-prefix` and `--backup-prefix` values select and align corresponding subtrees without changing either inventory. These outputs are evidence for review; the command does not copy, overwrite, or delete files.
+
+Repeated `--primary-exclude-prefix` or `--backup-exclude-prefix` options remove system metadata or generated outputs from synchronization categories while retaining the complete source totals in the summary. Generate the interactive cross-drive report after reviewing the selected prefixes:
+
+```bash
+python -m main.inventory_compare_report \
+  scan-results/cross-drive-summary.json \
+  --files scan-results/cross-drive-files.csv \
+  --relocated scan-results/cross-drive-relocated.csv \
+  --folders scan-results/cross-drive-folders.csv \
+  --folder-details scan-results/cross-drive-folder-files.csv \
+  --output scan-results/cross-drive-comparison.html
+```
+
+The HTML shows full and selected inventory totals, root mappings, exclusions, and a folder table using the Primary drive as Master and Backup folders as Secondaries. Each folder candidate links to file-type and matching-file evidence. Complete filename-and-size coverage advances a folder to full hash verification; it does not authorize deletion. Exact-path conflicts, one-sided files, and different-path candidates follow the folder section. Large tables are deliberately bounded in HTML; their complete evidence remains in the local CSV files.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 
