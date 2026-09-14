@@ -159,6 +159,9 @@ class BackupSyncTests(unittest.TestCase):
             self.assertIn("Folder Details — Backup Gaps", page)
             self.assertIn("Demonstration data; rescan before copying.", page)
             self.assertIn("Needs sync", page)
+            self.assertIn("function sortTable", page)
+            self.assertGreaterEqual(page.count('class="sort-button"'), 9)
+            self.assertIn('data-direction="desc" aria-sort="descending"', page)
             detail_pages = list((root / "backup-sync-folders").glob("*.html"))
             self.assertEqual(len(detail_pages), pages)
             details = "\n".join(
@@ -166,6 +169,8 @@ class BackupSyncTests(unittest.TestCase):
             )
             self.assertIn("Ready to copy", details)
             self.assertIn("Possible relocated matches", details)
+            self.assertIn("function sortTable", details)
+            self.assertIn('data-sort="5"', details)
 
     def test_rejects_file_evidence_that_does_not_match_summary(self):
         with tempfile.TemporaryDirectory() as directory:

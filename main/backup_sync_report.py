@@ -11,7 +11,10 @@ from itertools import count
 from pathlib import Path, PurePosixPath
 
 
-STYLE = '''body{font:15px system-ui,sans-serif;max-width:1550px;margin:1.5rem auto;padding:0 1rem;color:#17202a}h1{margin-bottom:.2rem}.muted{color:#617384}.notice{background:#fff4ce;border-left:5px solid #b7791f;padding:.8rem 1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:.8rem;margin:1rem 0}.card{background:#eef3f7;border-radius:.6rem;padding:1rem}.card b{display:block;font-size:1.35rem;margin-top:.3rem}.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.7rem 0}.toolbar button{border:1px solid #9bacbb;background:white;border-radius:.35rem;padding:.45rem .7rem;cursor:pointer}.toolbar button.active{background:#145dcc;color:white;border-color:#145dcc}input{box-sizing:border-box;min-width:18rem;flex:1;padding:.5rem}.table-wrap{max-height:42rem;overflow:auto;border:1px solid #d9e1e8;border-radius:.4rem}table{border-collapse:collapse;width:100%;font-size:.84rem}th,td{padding:.45rem;border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}thead th{position:sticky;top:0;background:white;z-index:1}.path{word-break:break-word;max-width:34rem}a{color:#145dcc}.status{font-weight:650;white-space:nowrap}.backed_up{color:#18783b}.needs_sync{color:#145dcc}.needs_sync_and_review{color:#9a6500}.review_required{color:#a43b32}.coverage{min-width:8rem}.track{height:.7rem;background:#e5e9ed;border-radius:.3rem;overflow:hidden;margin-top:.25rem}.fill{height:100%;background:#2f855a}details{margin:1rem 0}summary{cursor:pointer;font-weight:650}nav{margin-bottom:1rem}@media(max-width:850px){.table-wrap{max-height:none}.cards{grid-template-columns:1fr 1fr}}'''
+STYLE = '''body{font:15px system-ui,sans-serif;max-width:1550px;margin:1.5rem auto;padding:0 1rem;color:#17202a}h1{margin-bottom:.2rem}.muted{color:#617384}.notice{background:#fff4ce;border-left:5px solid #b7791f;padding:.8rem 1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:.8rem;margin:1rem 0}.card{background:#eef3f7;border-radius:.6rem;padding:1rem}.card b{display:block;font-size:1.35rem;margin-top:.3rem}.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.7rem 0}.toolbar button{border:1px solid #9bacbb;background:white;border-radius:.35rem;padding:.45rem .7rem;cursor:pointer}.toolbar button.active{background:#145dcc;color:white;border-color:#145dcc}input{box-sizing:border-box;min-width:18rem;flex:1;padding:.5rem}.table-wrap{max-height:42rem;overflow:auto;border:1px solid #d9e1e8;border-radius:.4rem}table{border-collapse:collapse;width:100%;font-size:.84rem}th,td{padding:.45rem;border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}thead th{position:sticky;top:0;background:white;z-index:1}.sort-button{border:0;background:transparent;color:inherit;font:inherit;font-weight:650;padding:0;cursor:pointer;white-space:nowrap}.sort-arrow{display:inline-block;min-width:1.1rem;color:#617384}.path{word-break:break-word;max-width:34rem}a{color:#145dcc}.status{font-weight:650;white-space:nowrap}.backed_up{color:#18783b}.needs_sync{color:#145dcc}.needs_sync_and_review{color:#9a6500}.review_required{color:#a43b32}.coverage{min-width:8rem}.track{height:.7rem;background:#e5e9ed;border-radius:.3rem;overflow:hidden;margin-top:.25rem}.fill{height:100%;background:#2f855a}details{margin:1rem 0}summary{cursor:pointer;font-weight:650}nav{margin-bottom:1rem}@media(max-width:850px){.table-wrap{max-height:none}.cards{grid-template-columns:1fr 1fr}}'''
+
+
+SORT_SCRIPT = '''function sortTable(button,tableId,column,type){const table=document.getElementById(tableId);const body=table.tBodies[0];const headers=table.querySelectorAll('.sort-button');const next=button.dataset.direction==='asc'?'desc':'asc';headers.forEach(item=>{item.dataset.direction='';item.setAttribute('aria-sort','none');item.querySelector('.sort-arrow').textContent='↕';});button.dataset.direction=next;button.setAttribute('aria-sort',next==='asc'?'ascending':'descending');button.querySelector('.sort-arrow').textContent=next==='asc'?'↑':'↓';const rows=Array.from(body.rows);rows.sort((left,right)=>{const a=left.cells[column]?.dataset.sort??left.cells[column]?.textContent.trim()??'';const b=right.cells[column]?.dataset.sort??right.cells[column]?.textContent.trim()??'';let value;if(type==='number'||type==='status'){value=Number(a)-Number(b);}else{value=a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});}return next==='asc'?value:-value;});rows.forEach(row=>body.appendChild(row));}function filterRows(input,id){const q=input.value.toLowerCase();document.querySelectorAll('#'+id+' tbody tr').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));}'''
 
 
 STATUS_LABELS = {
@@ -19,6 +22,13 @@ STATUS_LABELS = {
     "needs_sync": "Needs sync",
     "needs_sync_and_review": "Needs sync and review",
     "review_required": "Review required",
+}
+
+STATUS_SORT = {
+    "needs_sync_and_review": 0,
+    "needs_sync": 1,
+    "review_required": 2,
+    "backed_up": 3,
 }
 
 
@@ -85,6 +95,14 @@ def _folder_selection(
             if row["folder_id"] not in seen:
                 selected.append(row)
                 seen.add(row["folder_id"])
+    selected.sort(
+        key=lambda row: (
+            int(row["copy_candidate_bytes"]),
+            int(row["relocated_candidate_bytes"]),
+            int(row["conflict_files"]),
+        ),
+        reverse=True,
+    )
     return selected
 
 
@@ -168,12 +186,31 @@ def _path(value: str, *, linked: bool = True) -> str:
     return f'<a class="path" href="{html.escape(uri, quote=True)}">{label}</a>'
 
 
-def _table(headers: list[str], rows: list[str], table_id: str) -> str:
+def _sort_header(
+    label: str,
+    table_id: str,
+    column: int,
+    kind: str = "text",
+    *,
+    direction: str = "",
+) -> str:
+    arrow = {"asc": "↑", "desc": "↓"}.get(direction, "↕")
+    aria = {"asc": "ascending", "desc": "descending"}.get(direction, "none")
+    return (
+        f'<button class="sort-button" type="button" data-direction="{direction}" '
+        f'aria-sort="{aria}" onclick="sortTable(this,\'{table_id}\',{column},\'{kind}\')">'
+        f'{html.escape(label)} <span class="sort-arrow">{arrow}</span></button>'
+    )
+
+
+def _table(
+    headers: list[tuple[str, str]], rows: list[str], table_id: str
+) -> str:
     body = "".join(rows) or (
         f'<tr><td colspan="{len(headers)}" class="muted">No files in this category.</td></tr>'
     )
     return f'''<input type="search" placeholder="Filter this table" oninput="filterRows(this,'{table_id}')">
-<div class="table-wrap"><table id="{table_id}"><thead><tr>{''.join(f'<th>{html.escape(header)}</th>' for header in headers)}</tr></thead><tbody>{body}</tbody></table></div>'''
+<div class="table-wrap"><table id="{table_id}"><thead><tr>{''.join(f'<th>{_sort_header(label, table_id, index, kind)}</th>' for index, (label, kind) in enumerate(headers))}</tr></thead><tbody>{body}</tbody></table></div>'''
 
 
 def _detail_page(
@@ -185,35 +222,35 @@ def _detail_page(
 ) -> None:
     key = folder["comparison_folder"]
     copy_rows = [
-        f'''<tr><td>{html.escape(row['comparison_path'])}</td><td>{_size(int(row['size_bytes']))}</td><td>{_path(row['primary_path'])}</td><td>{_path(row['backup_target_path'], linked=False)}</td></tr>'''
+        f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{int(row['size_bytes'])}">{_size(int(row['size_bytes']))}</td><td data-sort="{html.escape(row['primary_path'], quote=True)}">{_path(row['primary_path'])}</td><td data-sort="{html.escape(row['backup_target_path'], quote=True)}">{_path(row['backup_target_path'], linked=False)}</td></tr>'''
         for row in samples.get((key, "copy"), [])
     ]
     relocated_rows = [
-        f'''<tr><td>{html.escape(row['comparison_path'])}</td><td>{_size(int(row['primary_size_bytes']))}</td><td>{_path(row['primary_path'])}</td><td class="path">{html.escape(row['candidate_backup_paths'])}</td></tr>'''
+        f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{int(row['primary_size_bytes'])}">{_size(int(row['primary_size_bytes']))}</td><td data-sort="{html.escape(row['primary_path'], quote=True)}">{_path(row['primary_path'])}</td><td class="path">{html.escape(row['candidate_backup_paths'])}</td></tr>'''
         for row in samples.get((key, "relocated"), [])
     ]
     conflict_rows = [
-        f'''<tr><td>{html.escape(row['comparison_path'])}</td><td>{_path(row['primary_path'])}</td><td>{_size(int(row['primary_size_bytes']))}</td><td>{_path(row['backup_path'])}</td><td>{_size(int(row['backup_size_bytes']))}</td></tr>'''
+        f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{html.escape(row['primary_path'], quote=True)}">{_path(row['primary_path'])}</td><td data-sort="{int(row['primary_size_bytes'])}">{_size(int(row['primary_size_bytes']))}</td><td data-sort="{html.escape(row['backup_path'], quote=True)}">{_path(row['backup_path'])}</td><td data-sort="{int(row['backup_size_bytes'])}">{_size(int(row['backup_size_bytes']))}</td></tr>'''
         for row in samples.get((key, "conflict"), [])
     ]
     backup_only_rows = [
-        f'''<tr><td>{html.escape(row['comparison_path'])}</td><td>{_size(int(row['backup_size_bytes']))}</td><td>{_path(row['backup_path'])}</td></tr>'''
+        f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{int(row['backup_size_bytes'])}">{_size(int(row['backup_size_bytes']))}</td><td data-sort="{html.escape(row['backup_path'], quote=True)}">{_path(row['backup_path'])}</td></tr>'''
         for row in samples.get((key, "backup_only"), [])
     ]
     backed_rows = [
-        f'''<tr><td>{html.escape(row['comparison_path'])}</td><td>{_size(int(row['primary_size_bytes']))}</td><td>{_path(row['primary_absolute_path'])}</td><td>{_path(row['backup_absolute_path'])}</td></tr>'''
+        f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{int(row['primary_size_bytes'])}">{_size(int(row['primary_size_bytes']))}</td><td data-sort="{html.escape(row['primary_absolute_path'], quote=True)}">{_path(row['primary_absolute_path'])}</td><td data-sort="{html.escape(row['backup_absolute_path'], quote=True)}">{_path(row['backup_absolute_path'])}</td></tr>'''
         for row in samples.get((key, "backed_up"), [])
     ]
     body = f'''<nav><a href="../{html.escape(output.name)}">← Backup Sync report</a></nav>
 <h1>{html.escape(key)} backup details</h1><div class="notice">{html.escape(notice)}</div>
 <p><b>Primary:</b> {_path(folder['primary_folder'])}</p><p><b>Backup:</b> {_path(folder['backup_folder'], linked=False)}</p>
 <section class="cards"><div class="card">Primary total<b>{int(folder['primary_files']):,} files</b><span>{_size(int(folder['primary_bytes']))}</span></div><div class="card">Backed up<b>{folder['byte_coverage_pct']}%</b><span>{int(folder['backed_up_files']):,} files / {_size(int(folder['backed_up_bytes']))}</span></div><div class="card">Ready to copy<b>{int(folder['copy_candidate_files']):,} files</b><span>{_size(int(folder['copy_candidate_bytes']))}</span></div><div class="card">Relocated review<b>{int(folder['relocated_candidate_files']):,} files</b><span>{_size(int(folder['relocated_candidate_bytes']))}</span></div><div class="card">Conflicts<b>{int(folder['conflict_files']):,}</b><span>{_size(int(folder['conflict_bytes']))}</span></div></section>
-<details open><summary>Ready to copy</summary><p class="muted">Files absent from the expected Backup path and without a known relocated candidate. Showing the largest bounded sample.</p>{_table(['Relative path','Size','Primary','Proposed Backup target'],copy_rows,'copy')}</details>
-<details open><summary>Possible relocated matches</summary><p class="muted">Hold these files for content verification and folder review instead of copying another copy.</p>{_table(['Relative path','Size','Primary','Candidate Backup locations'],relocated_rows,'relocated')}</details>
-<details open><summary>Different-size conflicts</summary>{_table(['Relative path','Primary','Primary size','Backup','Backup size'],conflict_rows,'conflicts')}</details>
-<details><summary>Backup-only recovery review</summary>{_table(['Relative path','Size','Backup location'],backup_only_rows,'backup-only')}</details>
-<details><summary>Already backed up</summary><p class="muted">Same expected path and byte size. Showing the largest bounded sample.</p>{_table(['Relative path','Size','Primary','Backup'],backed_rows,'backed')}</details>
-<script>function filterRows(input,id){{const q=input.value.toLowerCase();document.querySelectorAll('#'+id+' tbody tr').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));}}</script>'''
+<details open><summary>Ready to copy</summary><p class="muted">Files absent from the expected Backup path and without a known relocated candidate. Showing the largest bounded sample.</p>{_table([('Relative path','text'),('Size','number'),('Primary','text'),('Proposed Backup target','text')],copy_rows,'copy')}</details>
+<details open><summary>Possible relocated matches</summary><p class="muted">Hold these files for content verification and folder review instead of copying another copy.</p>{_table([('Relative path','text'),('Size','number'),('Primary','text'),('Candidate Backup locations','text')],relocated_rows,'relocated')}</details>
+<details open><summary>Different-size conflicts</summary>{_table([('Relative path','text'),('Primary','text'),('Primary size','number'),('Backup','text'),('Backup size','number')],conflict_rows,'conflicts')}</details>
+<details><summary>Backup-only recovery review</summary>{_table([('Relative path','text'),('Size','number'),('Backup location','text')],backup_only_rows,'backup-only')}</details>
+<details><summary>Already backed up</summary><p class="muted">Same expected path and byte size. Showing the largest bounded sample.</p>{_table([('Relative path','text'),('Size','number'),('Primary','text'),('Backup','text')],backed_rows,'backed')}</details>
+<script>{SORT_SCRIPT}</script>'''
     document = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(key)} backup details</title><style>{STYLE}</style></head><body>{body}</body></html>'
     (page_directory / f"{folder['folder_id'].casefold()}.html").write_text(
         document, encoding="utf-8"
@@ -261,7 +298,7 @@ def generate(
         coverage = float(row["byte_coverage_pct"])
         page = f"{row['folder_id'].casefold()}.html"
         folder_rows.append(
-            f'''<tr data-status="{html.escape(status)}"><td><a class="path" href="{html.escape(page_directory.name)}/{html.escape(page)}">{html.escape(row['primary_folder'])}</a></td><td class="path">{html.escape(row['backup_folder'])}</td><td class="status {html.escape(status)}">{html.escape(STATUS_LABELS.get(status,status))}</td><td class="coverage"><b>{coverage:.1f}%</b><div class="track"><div class="fill" style="width:{coverage:.1f}%"></div></div></td><td>{int(row['backed_up_files']):,}<br><span class="muted">{_size(int(row['backed_up_bytes']))}</span></td><td>{int(row['copy_candidate_files']):,}<br><span class="muted">{_size(int(row['copy_candidate_bytes']))}</span></td><td>{int(row['relocated_candidate_files']):,}<br><span class="muted">{_size(int(row['relocated_candidate_bytes']))}</span></td><td>{int(row['conflict_files']):,}</td><td>{html.escape(row['approval_status'])}</td></tr>'''
+            f'''<tr data-status="{html.escape(status)}"><td data-sort="{html.escape(row['primary_folder'], quote=True)}"><a class="path" href="{html.escape(page_directory.name)}/{html.escape(page)}">{html.escape(row['primary_folder'])}</a></td><td class="path" data-sort="{html.escape(row['backup_folder'], quote=True)}">{html.escape(row['backup_folder'])}</td><td class="status {html.escape(status)}" data-sort="{STATUS_SORT.get(status, 99)}">{html.escape(STATUS_LABELS.get(status,status))}</td><td class="coverage" data-sort="{coverage}"><b>{coverage:.1f}%</b><div class="track"><div class="fill" style="width:{coverage:.1f}%"></div></div></td><td data-sort="{int(row['backed_up_bytes'])}">{int(row['backed_up_files']):,}<br><span class="muted">{_size(int(row['backed_up_bytes']))}</span></td><td data-sort="{int(row['copy_candidate_bytes'])}">{int(row['copy_candidate_files']):,}<br><span class="muted">{_size(int(row['copy_candidate_bytes']))}</span></td><td data-sort="{int(row['relocated_candidate_bytes'])}">{int(row['relocated_candidate_files']):,}<br><span class="muted">{_size(int(row['relocated_candidate_bytes']))}</span></td><td data-sort="{int(row['conflict_files'])}">{int(row['conflict_files']):,}</td><td data-sort="{html.escape(row['approval_status'], quote=True)}">{html.escape(row['approval_status'])}</td></tr>'''
         )
 
     coverage = summary["coverage"]
@@ -270,9 +307,9 @@ def generate(
     definitions = '''<details open><summary>How to use this report</summary><ul><li><b>Backed up:</b> the same expected path and byte size exists on both drives.</li><li><b>Ready to copy:</b> the Primary path is absent from the Backup and no same-name-and-size candidate is known elsewhere.</li><li><b>Relocated review:</b> a possible copy exists elsewhere on the Backup; verify it before copying or reorganizing.</li><li><b>Conflict:</b> both drives contain the expected path with different byte sizes.</li><li><b>Backup only:</b> preserve for recovery review; never delete automatically.</li></ul><p class="muted">Folder rows contain recursive totals and overlap with their parents. File-level copy candidates are unique. This report cannot copy, overwrite, or delete files.</p></details>'''
     body = f'''<h1>File Tidy Backup Sync</h1><p class="muted">{html.escape(primary['label'])} is the Primary; {html.escape(backup['label'])} is the Backup.</p><div class="notice">{html.escape(notice)}</div>{definitions}
 <section class="cards"><div class="card">Primary selected<b>{int(primary['files']):,} files</b><span>{_size(int(primary['bytes']))}</span></div><div class="card">Backed up at expected path<b>{coverage['byte_coverage_pct']}%</b><span>{int(coverage['backed_up_files']):,} files / {_size(int(coverage['backed_up_bytes']))}</span></div><div class="card">Ready to copy<b>{int(coverage['copy_candidate_files']):,} files</b><span>{_size(int(coverage['copy_candidate_bytes']))}</span></div><div class="card">Relocated review<b>{int(coverage['relocated_candidate_files']):,} files</b><span>{_size(int(coverage['relocated_candidate_bytes']))}</span></div><div class="card">Path conflicts<b>{int(coverage['conflict_files']):,}</b><span>{_size(int(coverage['conflict_bytes']))}</span></div><div class="card">Backup-only review<b>{int(coverage['backup_only_files']):,} files</b><span>{_size(int(coverage['backup_only_bytes']))}</span></div></section>
-<details open><summary>Folder Details — Backup Gaps</summary><p class="muted">Ranked by unambiguous copy-candidate bytes. Open a Primary folder to inspect the bounded file evidence.</p><div class="toolbar"><button class="active" data-filter="all" onclick="setFolderStatus('all',this)">All</button><button data-filter="needs_sync" onclick="setFolderStatus('needs_sync',this)">Needs sync</button><button data-filter="needs_sync_and_review" onclick="setFolderStatus('needs_sync_and_review',this)">Sync and review</button><button data-filter="review_required" onclick="setFolderStatus('review_required',this)">Review</button><button data-filter="backed_up" onclick="setFolderStatus('backed_up',this)">Backed up</button><input id="folder-search" type="search" placeholder="Filter folders" oninput="filterFolders()"></div><div class="table-wrap"><table id="folder-gaps"><thead><tr><th>Primary folder</th><th>Backup folder</th><th>Status</th><th>Byte coverage</th><th>Backed up</th><th>Ready to copy</th><th>Relocated review</th><th>Conflicts</th><th>Decision</th></tr></thead><tbody>{''.join(folder_rows)}</tbody></table></div><p class="muted">Showing {len(selected):,} ranked folder rows from {len(gaps):,}; complete data remains in {html.escape(str(gaps_csv))}.</p></details>
+<details open><summary>Folder Details — Backup Gaps</summary><p class="muted">Ranked by unambiguous copy-candidate bytes. Open a Primary folder to inspect the bounded file evidence. Combined count-and-size columns sort by bytes.</p><div class="toolbar"><button class="active" data-filter="all" onclick="setFolderStatus('all',this)">All</button><button data-filter="needs_sync" onclick="setFolderStatus('needs_sync',this)">Needs sync</button><button data-filter="needs_sync_and_review" onclick="setFolderStatus('needs_sync_and_review',this)">Sync and review</button><button data-filter="review_required" onclick="setFolderStatus('review_required',this)">Review</button><button data-filter="backed_up" onclick="setFolderStatus('backed_up',this)">Backed up</button><input id="folder-search" type="search" placeholder="Filter folders" oninput="filterFolders()"></div><div class="table-wrap"><table id="folder-gaps"><thead><tr><th>{_sort_header('Primary folder','folder-gaps',0)}</th><th>{_sort_header('Backup folder','folder-gaps',1)}</th><th>{_sort_header('Status','folder-gaps',2,'status')}</th><th>{_sort_header('Byte coverage','folder-gaps',3,'number')}</th><th>{_sort_header('Backed up','folder-gaps',4,'number')}</th><th>{_sort_header('Ready to copy','folder-gaps',5,'number',direction='desc')}</th><th>{_sort_header('Relocated review','folder-gaps',6,'number')}</th><th>{_sort_header('Conflicts','folder-gaps',7,'number')}</th><th>{_sort_header('Decision','folder-gaps',8)}</th></tr></thead><tbody>{''.join(folder_rows)}</tbody></table></div><p class="muted">Showing {len(selected):,} ranked folder rows from {len(gaps):,}; complete data remains in {html.escape(str(gaps_csv))}.</p></details>
 <details><summary>Plan roots and local evidence</summary><table><tbody><tr><th>Primary selected root</th><td class="path">{html.escape(primary['selected_root'])}</td></tr><tr><th>Backup selected root</th><td class="path">{html.escape(backup['selected_root'])}</td></tr><tr><th>Copy candidates CSV</th><td class="path">{html.escape(str(copy_csv))}</td></tr><tr><th>Review CSV</th><td class="path">{html.escape(str(review_csv))}</td></tr></tbody></table></details>
-<script>let folderStatus='all';function setFolderStatus(status,button){{folderStatus=status;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.remove('active'));button.classList.add('active');filterFolders();}}function filterFolders(){{const q=document.getElementById('folder-search').value.toLowerCase();document.querySelectorAll('#folder-gaps tbody tr').forEach(row=>{{const statusOk=folderStatus==='all'||row.dataset.status===folderStatus;const textOk=row.textContent.toLowerCase().includes(q);row.hidden=!(statusOk&&textOk);}});}}</script>'''
+<script>{SORT_SCRIPT}let folderStatus='all';function setFolderStatus(status,button){{folderStatus=status;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.remove('active'));button.classList.add('active');filterFolders();}}function filterFolders(){{const q=document.getElementById('folder-search').value.toLowerCase();document.querySelectorAll('#folder-gaps tbody tr').forEach(row=>{{const statusOk=folderStatus==='all'||row.dataset.status===folderStatus;const textOk=row.textContent.toLowerCase().includes(q);row.hidden=!(statusOk&&textOk);}});}}</script>'''
     document = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>File Tidy Backup Sync</title><style>{STYLE}</style></head><body>{body}</body></html>'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")

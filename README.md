@@ -163,7 +163,7 @@ python -m main.backup_sync_report \
   --output scan-results/backup-sync.html
 ```
 
-The report puts overall backup health and folder-level gaps first. It distinguishes files ready to copy from possible relocated matches, different-size conflicts, already-backed-up paths, and Backup-only recovery candidates. Each displayed folder opens a bounded evidence page. Status and text filters operate locally in the generated HTML, while complete data remains in the plan CSV files.
+The report puts overall backup health and folder-level gaps first. It distinguishes files ready to copy from possible relocated matches, different-size conflicts, already-backed-up paths, and Backup-only recovery candidates. Each displayed folder opens a bounded evidence page. Status filters, text filters, and ascending or descending column sorting operate locally in the generated HTML, while complete data remains in the plan CSV files. Combined count-and-size columns sort by their raw byte values.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 
