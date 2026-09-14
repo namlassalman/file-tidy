@@ -79,6 +79,7 @@ class BackupSyncTests(unittest.TestCase):
             gaps = root / "gaps.csv"
             copies = root / "copies.csv"
             review = root / "review.csv"
+            backup_only_folders = root / "backup-only-folders.csv"
             plan_summary = root / "plan.json"
 
             result = build_backup_plan(
@@ -89,6 +90,7 @@ class BackupSyncTests(unittest.TestCase):
                 copies,
                 review,
                 plan_summary,
+                backup_only_output=backup_only_folders,
             )
 
             self.assertTrue(result["complete"])
@@ -105,6 +107,7 @@ class BackupSyncTests(unittest.TestCase):
             self.assertEqual(result["coverage"]["relocated_candidate_bytes"], 20)
             self.assertEqual(result["coverage"]["conflict_files"], 1)
             self.assertEqual(result["coverage"]["backup_only_files"], 2)
+            self.assertEqual(result["backup_only_folder_rows"], 3)
 
             with copies.open(newline="", encoding="utf-8") as source:
                 copy_rows = list(csv.DictReader(source))
@@ -143,6 +146,27 @@ class BackupSyncTests(unittest.TestCase):
                 if row["action"] == "review_relocated_candidate"
             )
             self.assertIn("Old Photos/photo.jpg", relocated_review["candidate_backup_paths"])
+            relocated_backup = next(
+                row for row in review_rows
+                if row["action"] == "review_backup_only" and row["candidate_id"]
+            )
+            self.assertIn(
+                "Photos/Trip/photo.jpg",
+                relocated_backup["candidate_primary_paths"],
+            )
+
+            with backup_only_folders.open(newline="", encoding="utf-8") as source:
+                backup_folder_rows = {
+                    row["comparison_folder"]: row for row in csv.DictReader(source)
+                }
+            self.assertEqual(backup_folder_rows["."]["backup_only_files"], "2")
+            self.assertEqual(backup_folder_rows["."]["backup_only_bytes"], "26")
+            self.assertEqual(
+                backup_folder_rows["Old Photos"]["status"], "relocation_review"
+            )
+            self.assertEqual(
+                backup_folder_rows["Archive"]["status"], "recovery_review"
+            )
 
             report = root / "backup-sync.html"
             displayed, pages = generate(
@@ -157,6 +181,7 @@ class BackupSyncTests(unittest.TestCase):
             page = report.read_text(encoding="utf-8")
             self.assertIn("File Tidy Backup Sync", page)
             self.assertIn("Folder Details — Backup Gaps", page)
+            self.assertIn("Cold Store-only — Recovery Review", page)
             self.assertIn("Demonstration data; rescan before copying.", page)
             self.assertIn("Needs sync", page)
             self.assertIn("function sortTable", page)
@@ -169,6 +194,8 @@ class BackupSyncTests(unittest.TestCase):
             )
             self.assertIn("Ready to copy", details)
             self.assertIn("Possible relocated matches", details)
+            self.assertIn("Cold Store-only file evidence", details)
+            self.assertIn("No filename-and-size candidate", details)
             self.assertIn("function sortTable", details)
             self.assertIn('data-sort="5"', details)
 

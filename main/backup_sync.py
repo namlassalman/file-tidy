@@ -35,6 +35,17 @@ class FolderTotals:
     conflict_bytes: int = 0
 
 
+@dataclass(slots=True)
+class BackupOnlyTotals:
+    files: int = 0
+    bytes: int = 0
+    recovery_review_files: int = 0
+    recovery_review_bytes: int = 0
+    relocated_candidate_files: int = 0
+    relocated_candidate_bytes: int = 0
+    latest_modified_ns: int = 0
+
+
 def _read_summary(path: Path) -> dict[str, object]:
     try:
         summary = json.loads(path.read_text(encoding="utf-8"))
@@ -142,6 +153,7 @@ def build_backup_plan(
     review_output: Path,
     summary_output: Path,
     *,
+    backup_only_output: Path | None = None,
     primary_root: str | None = None,
     backup_root: str | None = None,
 ) -> dict[str, object]:
@@ -157,6 +169,7 @@ def build_backup_plan(
         relocated_csv = _resolve_input(comparison_summary, str(outputs["relocated"]))
 
     relocated_primary: dict[str, dict[str, str]] = {}
+    relocated_backup: dict[str, dict[str, str]] = {}
     if relocated_groups:
         if relocated_csv is None:
             raise ValueError(
@@ -173,6 +186,8 @@ def build_backup_plan(
             relocated_fields = {
                 "candidate_id",
                 "primary_relative_paths",
+                "primary_absolute_paths",
+                "backup_relative_paths",
                 "backup_absolute_paths",
             }
             if (
@@ -185,20 +200,38 @@ def build_backup_plan(
                 observed_groups += 1
                 try:
                     primary_paths = json.loads(row["primary_relative_paths"])
+                    primary_absolute_paths = json.loads(row["primary_absolute_paths"])
+                    backup_relative_paths = json.loads(row["backup_relative_paths"])
                     backup_paths = json.loads(row["backup_absolute_paths"])
                 except json.JSONDecodeError as exc:
                     raise ValueError(
                         f"Invalid relocated-candidate paths on CSV line {line_number}."
                     ) from exc
-                if not isinstance(primary_paths, list) or not isinstance(backup_paths, list):
+                if not all(
+                    isinstance(value, list)
+                    for value in (
+                        primary_paths,
+                        primary_absolute_paths,
+                        backup_relative_paths,
+                        backup_paths,
+                    )
+                ):
                     raise ValueError(
                         f"Invalid relocated-candidate paths on CSV line {line_number}."
                     )
                 backup_locations = json.dumps(backup_paths, ensure_ascii=False)
+                primary_locations = json.dumps(
+                    primary_absolute_paths, ensure_ascii=False
+                )
                 for primary_path in primary_paths:
                     relocated_primary[str(primary_path)] = {
                         "candidate_id": row["candidate_id"],
                         "backup_locations": backup_locations,
+                    }
+                for backup_path in backup_relative_paths:
+                    relocated_backup[str(backup_path)] = {
+                        "candidate_id": row["candidate_id"],
+                        "primary_locations": primary_locations,
                     }
             if observed_groups != relocated_groups:
                 raise ValueError(
@@ -215,6 +248,7 @@ def build_backup_plan(
         "primary_size_bytes",
         "primary_modified_ns",
         "backup_absolute_path",
+        "backup_relative_path",
         "backup_uri",
         "backup_size_bytes",
         "backup_modified_ns",
@@ -230,6 +264,9 @@ def build_backup_plan(
         for status in COMPARISON_STATUSES
     }
     folder_totals: dict[str, FolderTotals] = defaultdict(FolderTotals)
+    backup_folder_totals: dict[str, BackupOnlyTotals] = defaultdict(
+        BackupOnlyTotals
+    )
     copy_rows: list[dict[str, object]] = []
     review_rows: list[dict[str, object]] = []
     primary_roots: set[str] = set()
@@ -302,6 +339,27 @@ def build_backup_plan(
                     else:
                         totals.conflict_files += 1
                         totals.conflict_bytes += primary_size
+            else:
+                relocated = relocated_backup.get(row["backup_relative_path"])
+                try:
+                    backup_modified_ns = int(row["backup_modified_ns"] or 0)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid modification time on comparison CSV line {line_number}."
+                    ) from exc
+                for folder in _ancestors(_folder_parts(comparison_path)):
+                    totals = backup_folder_totals[folder]
+                    totals.files += 1
+                    totals.bytes += backup_size
+                    totals.latest_modified_ns = max(
+                        totals.latest_modified_ns, backup_modified_ns
+                    )
+                    if relocated:
+                        totals.relocated_candidate_files += 1
+                        totals.relocated_candidate_bytes += backup_size
+                    else:
+                        totals.recovery_review_files += 1
+                        totals.recovery_review_bytes += backup_size
 
             if status == "primary_only":
                 relocated = relocated_primary.get(row["primary_relative_path"])
@@ -317,6 +375,7 @@ def build_backup_plan(
                         "backup_size_bytes": "",
                         "backup_modified_ns": "",
                         "candidate_backup_paths": relocated["backup_locations"],
+                        "candidate_primary_paths": "",
                         "review_status": "not_reviewed",
                     })
                 else:
@@ -331,13 +390,20 @@ def build_backup_plan(
                         "approval_status": "not_reviewed",
                     })
             elif status in {"same_path_different_size", "backup_only"}:
+                backup_relocated = (
+                    relocated_backup.get(row["backup_relative_path"])
+                    if status == "backup_only"
+                    else None
+                )
                 review_rows.append({
                     "action": (
                         "review_conflict"
                         if status == "same_path_different_size"
                         else "review_backup_only"
                     ),
-                    "candidate_id": "",
+                    "candidate_id": (
+                        backup_relocated["candidate_id"] if backup_relocated else ""
+                    ),
                     "comparison_path": comparison_path,
                     "primary_path": row["primary_absolute_path"],
                     "primary_size_bytes": row["primary_size_bytes"],
@@ -346,6 +412,10 @@ def build_backup_plan(
                     "backup_size_bytes": row["backup_size_bytes"],
                     "backup_modified_ns": row["backup_modified_ns"],
                     "candidate_backup_paths": "",
+                    "candidate_primary_paths": (
+                        backup_relocated["primary_locations"]
+                        if backup_relocated else ""
+                    ),
                     "review_status": "not_reviewed",
                 })
 
@@ -366,6 +436,46 @@ def build_backup_plan(
 
     for row in copy_rows:
         row["backup_target_path"] = _join(backup_root, str(row["comparison_path"]))
+
+    if backup_only_output is None:
+        backup_only_output = gaps_output.with_name(
+            "backup-sync-backup-only-folders.csv"
+        )
+    backup_only_rows: list[dict[str, object]] = []
+    for folder, totals in backup_folder_totals.items():
+        relative = "" if folder == "." else folder
+        if totals.recovery_review_files and totals.relocated_candidate_files:
+            status = "recovery_and_relocation_review"
+        elif totals.relocated_candidate_files:
+            status = "relocation_review"
+        else:
+            status = "recovery_review"
+        identifier = hashlib.sha256(
+            f"backup-only\0{folder.casefold()}".encode("utf-8")
+        ).hexdigest()[:12]
+        backup_only_rows.append({
+            "folder_id": f"R{identifier}",
+            "comparison_folder": folder,
+            "backup_folder": _join(backup_root, relative),
+            "depth": 0 if folder == "." else len(PurePosixPath(folder).parts),
+            "backup_only_files": totals.files,
+            "backup_only_bytes": totals.bytes,
+            "recovery_review_files": totals.recovery_review_files,
+            "recovery_review_bytes": totals.recovery_review_bytes,
+            "relocated_candidate_files": totals.relocated_candidate_files,
+            "relocated_candidate_bytes": totals.relocated_candidate_bytes,
+            "latest_modified_ns": totals.latest_modified_ns,
+            "status": status,
+            "review_status": "not_reviewed",
+        })
+    backup_only_rows.sort(
+        key=lambda row: (
+            int(row["backup_only_bytes"]),
+            int(row["backup_only_files"]),
+            -int(row["depth"]),
+        ),
+        reverse=True,
+    )
 
     gaps_rows: list[dict[str, object]] = []
     for folder, totals in folder_totals.items():
@@ -444,11 +554,20 @@ def build_backup_plan(
     review_fields = [
         "action", "candidate_id", "comparison_path", "primary_path", "primary_size_bytes",
         "primary_modified_ns", "backup_path", "backup_size_bytes",
-        "backup_modified_ns", "candidate_backup_paths", "review_status",
+        "backup_modified_ns", "candidate_backup_paths", "candidate_primary_paths",
+        "review_status",
+    ]
+    backup_only_fields = [
+        "folder_id", "comparison_folder", "backup_folder", "depth",
+        "backup_only_files", "backup_only_bytes", "recovery_review_files",
+        "recovery_review_bytes", "relocated_candidate_files",
+        "relocated_candidate_bytes", "latest_modified_ns", "status",
+        "review_status",
     ]
     _write_csv(gaps_output, gaps_rows, gap_fields)
     _write_csv(copy_output, copy_rows, copy_fields)
     _write_csv(review_output, review_rows, review_fields)
+    _write_csv(backup_only_output, backup_only_rows, backup_only_fields)
 
     root_totals = folder_totals.get(".", FolderTotals())
     backup_only = observed["backup_only"]
@@ -489,6 +608,7 @@ def build_backup_plan(
             "backup_only_bytes": backup_only["backup_bytes"],
         },
         "folder_rows": len(gaps_rows),
+        "backup_only_folder_rows": len(backup_only_rows),
         "note": (
             "Folder rows are recursive and overlap. File-level copy candidates are "
             "unique and require folder approval before an rsync manifest is created."
@@ -497,6 +617,7 @@ def build_backup_plan(
             "gaps": str(gaps_output),
             "copy_candidates": str(copy_output),
             "review": str(review_output),
+            "backup_only_folders": str(backup_only_output),
         },
     }
     summary_output.parent.mkdir(parents=True, exist_ok=True)
@@ -529,6 +650,11 @@ def main() -> int:
         default=Path("scan-results/backup-sync-review.csv"),
     )
     parser.add_argument(
+        "--backup-only-folders-output",
+        type=Path,
+        default=Path("scan-results/backup-sync-backup-only-folders.csv"),
+    )
+    parser.add_argument(
         "--summary-output",
         type=Path,
         default=Path("scan-results/backup-sync-summary.json"),
@@ -542,12 +668,14 @@ def main() -> int:
         args.copy_output,
         args.review_output,
         args.summary_output,
+        backup_only_output=args.backup_only_folders_output,
         primary_root=args.primary_root,
         backup_root=args.backup_root,
     )
     print(json.dumps({
         "coverage": result["coverage"],
         "folder_rows": result["folder_rows"],
+        "backup_only_folder_rows": result["backup_only_folder_rows"],
         "outputs": result["outputs"],
         "summary": str(args.summary_output),
     }, indent=2))

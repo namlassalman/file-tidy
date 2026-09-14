@@ -7,11 +7,12 @@ import csv
 import heapq
 import html
 import json
+from datetime import datetime, timezone
 from itertools import count
 from pathlib import Path, PurePosixPath
 
 
-STYLE = '''body{font:15px system-ui,sans-serif;max-width:1550px;margin:1.5rem auto;padding:0 1rem;color:#17202a}h1{margin-bottom:.2rem}.muted{color:#617384}.notice{background:#fff4ce;border-left:5px solid #b7791f;padding:.8rem 1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:.8rem;margin:1rem 0}.card{background:#eef3f7;border-radius:.6rem;padding:1rem}.card b{display:block;font-size:1.35rem;margin-top:.3rem}.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.7rem 0}.toolbar button{border:1px solid #9bacbb;background:white;border-radius:.35rem;padding:.45rem .7rem;cursor:pointer}.toolbar button.active{background:#145dcc;color:white;border-color:#145dcc}input{box-sizing:border-box;min-width:18rem;flex:1;padding:.5rem}.table-wrap{max-height:42rem;overflow:auto;border:1px solid #d9e1e8;border-radius:.4rem}table{border-collapse:collapse;width:100%;font-size:.84rem}th,td{padding:.45rem;border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}thead th{position:sticky;top:0;background:white;z-index:1}.sort-button{border:0;background:transparent;color:inherit;font:inherit;font-weight:650;padding:0;cursor:pointer;white-space:nowrap}.sort-arrow{display:inline-block;min-width:1.1rem;color:#617384}.path{word-break:break-word;max-width:34rem}a{color:#145dcc}.status{font-weight:650;white-space:nowrap}.backed_up{color:#18783b}.needs_sync{color:#145dcc}.needs_sync_and_review{color:#9a6500}.review_required{color:#a43b32}.coverage{min-width:8rem}.track{height:.7rem;background:#e5e9ed;border-radius:.3rem;overflow:hidden;margin-top:.25rem}.fill{height:100%;background:#2f855a}details{margin:1rem 0}summary{cursor:pointer;font-weight:650}nav{margin-bottom:1rem}@media(max-width:850px){.table-wrap{max-height:none}.cards{grid-template-columns:1fr 1fr}}'''
+STYLE = '''body{font:15px system-ui,sans-serif;max-width:1550px;margin:1.5rem auto;padding:0 1rem;color:#17202a}h1{margin-bottom:.2rem}.muted{color:#617384}.notice{background:#fff4ce;border-left:5px solid #b7791f;padding:.8rem 1rem;margin:1rem 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:.8rem;margin:1rem 0}.card{background:#eef3f7;border-radius:.6rem;padding:1rem}.card b{display:block;font-size:1.35rem;margin-top:.3rem}.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.7rem 0}.toolbar button{border:1px solid #9bacbb;background:white;border-radius:.35rem;padding:.45rem .7rem;cursor:pointer}.toolbar button.active{background:#145dcc;color:white;border-color:#145dcc}input{box-sizing:border-box;min-width:18rem;flex:1;padding:.5rem}.table-wrap{max-height:42rem;overflow:auto;border:1px solid #d9e1e8;border-radius:.4rem}table{border-collapse:collapse;width:100%;font-size:.84rem}th,td{padding:.45rem;border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}thead th{position:sticky;top:0;background:white;z-index:1}.sort-button{border:0;background:transparent;color:inherit;font:inherit;font-weight:650;padding:0;cursor:pointer;white-space:nowrap}.sort-arrow{display:inline-block;min-width:1.1rem;color:#617384}.path{word-break:break-word;max-width:34rem}a{color:#145dcc}.status{font-weight:650;white-space:nowrap}.backed_up{color:#18783b}.needs_sync{color:#145dcc}.needs_sync_and_review,.recovery_and_relocation_review{color:#9a6500}.review_required,.recovery_review{color:#a43b32}.relocation_review{color:#805ad5}.coverage{min-width:8rem}.track{height:.7rem;background:#e5e9ed;border-radius:.3rem;overflow:hidden;margin-top:.25rem}.fill{height:100%;background:#2f855a}details{margin:1rem 0}summary{cursor:pointer;font-weight:650}nav{margin-bottom:1rem}@media(max-width:850px){.table-wrap{max-height:none}.cards{grid-template-columns:1fr 1fr}}'''
 
 
 SORT_SCRIPT = '''function sortTable(button,tableId,column,type){const table=document.getElementById(tableId);const body=table.tBodies[0];const headers=table.querySelectorAll('.sort-button');const next=button.dataset.direction==='asc'?'desc':'asc';headers.forEach(item=>{item.dataset.direction='';item.setAttribute('aria-sort','none');item.querySelector('.sort-arrow').textContent='↕';});button.dataset.direction=next;button.setAttribute('aria-sort',next==='asc'?'ascending':'descending');button.querySelector('.sort-arrow').textContent=next==='asc'?'↑':'↓';const rows=Array.from(body.rows);rows.sort((left,right)=>{const a=left.cells[column]?.dataset.sort??left.cells[column]?.textContent.trim()??'';const b=right.cells[column]?.dataset.sort??right.cells[column]?.textContent.trim()??'';let value;if(type==='number'||type==='status'){value=Number(a)-Number(b);}else{value=a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});}return next==='asc'?value:-value;});rows.forEach(row=>body.appendChild(row));}function filterRows(input,id){const q=input.value.toLowerCase();document.querySelectorAll('#'+id+' tbody tr').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));}'''
@@ -31,6 +32,18 @@ STATUS_SORT = {
     "backed_up": 3,
 }
 
+RECOVERY_STATUS_LABELS = {
+    "recovery_and_relocation_review": "Recovery and relocation review",
+    "recovery_review": "Recovery review",
+    "relocation_review": "Relocation review",
+}
+
+RECOVERY_STATUS_SORT = {
+    "recovery_and_relocation_review": 0,
+    "recovery_review": 1,
+    "relocation_review": 2,
+}
+
 
 def _size(value: int) -> str:
     amount = float(value)
@@ -39,6 +52,18 @@ def _size(value: int) -> str:
             return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount):,} B"
         amount /= 1000
     return f"{value:,} B"
+
+
+def _time(value: str) -> str:
+    try:
+        nanoseconds = int(value)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if not nanoseconds:
+        return "Unknown"
+    return datetime.fromtimestamp(nanoseconds / 1_000_000_000, timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
 
 
 def _resolve(summary_path: Path, value: str | Path) -> Path:
@@ -103,6 +128,31 @@ def _folder_selection(
         ),
         reverse=True,
     )
+    return selected
+
+
+def _recovery_selection(
+    rows: list[dict[str, str]], per_status: int
+) -> list[dict[str, str]]:
+    selected: list[dict[str, str]] = []
+    seen: set[str] = set()
+    root = next((row for row in rows if row["comparison_folder"] == "."), None)
+    if root:
+        selected.append(root)
+        seen.add(root["folder_id"])
+    for status in (
+        "recovery_and_relocation_review",
+        "recovery_review",
+        "relocation_review",
+    ):
+        for row in (item for item in rows if item["status"] == status):
+            if row["folder_id"] in seen:
+                continue
+            selected.append(row)
+            seen.add(row["folder_id"])
+            if sum(item["status"] == status for item in selected) >= per_status:
+                break
+    selected.sort(key=lambda row: int(row["backup_only_bytes"]), reverse=True)
     return selected
 
 
@@ -257,6 +307,32 @@ def _detail_page(
     )
 
 
+def _recovery_detail_page(
+    output: Path,
+    page_directory: Path,
+    folder: dict[str, str],
+    samples: dict[tuple[str, str], list[dict[str, str]]],
+    notice: str,
+) -> None:
+    key = folder["comparison_folder"]
+    evidence_rows = []
+    for row in samples.get((key, "backup_only"), []):
+        possible_primary = row.get("candidate_primary_paths", "")
+        evidence_rows.append(
+            f'''<tr><td data-sort="{html.escape(row['comparison_path'], quote=True)}">{html.escape(row['comparison_path'])}</td><td data-sort="{int(row['backup_size_bytes'])}">{_size(int(row['backup_size_bytes']))}</td><td data-sort="{html.escape(row['backup_path'], quote=True)}">{_path(row['backup_path'])}</td><td data-sort="{1 if possible_primary else 0}" class="path">{html.escape(possible_primary or 'No filename-and-size candidate')}</td><td data-sort="{html.escape(row['review_status'], quote=True)}">{html.escape(row['review_status'])}</td></tr>'''
+        )
+    body = f'''<nav><a href="../{html.escape(output.name)}">← Backup Sync report</a></nav>
+<h1>{html.escape(key)} Cold Store-only details</h1><div class="notice">{html.escape(notice)}</div>
+<p><b>Cold Store folder:</b> {_path(folder['backup_folder'])}</p>
+<section class="cards"><div class="card">Cold Store-only total<b>{int(folder['backup_only_files']):,} files</b><span>{_size(int(folder['backup_only_bytes']))}</span></div><div class="card">Recovery review<b>{int(folder['recovery_review_files']):,} files</b><span>{_size(int(folder['recovery_review_bytes']))}</span></div><div class="card">Possible relocated matches<b>{int(folder['relocated_candidate_files']):,} files</b><span>{_size(int(folder['relocated_candidate_bytes']))}</span></div><div class="card">Latest recorded change<b>{_time(folder['latest_modified_ns'])}</b></div></section>
+<details open><summary>Cold Store-only file evidence</summary><p class="muted">Review these files for restoration, intentional cold-only retention, or possible relocation. Showing the largest bounded sample.</p>{_table([('Relative path','text'),('Size','number'),('Cold Store location','text'),('Possible Primary locations','number'),('Review status','text')],evidence_rows,'recovery-files')}</details>
+<p class="muted">No selection on this page authorizes deletion. Verify content and retention intent first.</p><script>{SORT_SCRIPT}</script>'''
+    document = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(key)} Cold Store-only details</title><style>{STYLE}</style></head><body>{body}</body></html>'
+    (page_directory / f"{folder['folder_id'].casefold()}.html").write_text(
+        document, encoding="utf-8"
+    )
+
+
 def generate(
     summary_path: Path,
     output: Path,
@@ -264,6 +340,7 @@ def generate(
     gaps_csv: Path | None = None,
     copy_csv: Path | None = None,
     review_csv: Path | None = None,
+    backup_only_folders_csv: Path | None = None,
     comparison_files: Path | None = None,
     notice: str = "Planning data only. Confirm both inventories are current before approving any copy operation.",
     folders_per_status: int = 125,
@@ -275,14 +352,23 @@ def generate(
     gaps_csv = gaps_csv or _resolve(summary_path, outputs["gaps"])
     copy_csv = copy_csv or _resolve(summary_path, outputs["copy_candidates"])
     review_csv = review_csv or _resolve(summary_path, outputs["review"])
+    backup_only_folders_csv = backup_only_folders_csv or _resolve(
+        summary_path, outputs["backup_only_folders"]
+    )
     comparison_files = comparison_files or _resolve(
         summary_path, summary["comparison_files"]
     )
     gaps = _read_csv(gaps_csv)
     copies = _read_csv(copy_csv)
     review = _read_csv(review_csv)
+    recovery_folders = _read_csv(backup_only_folders_csv)
     selected = _folder_selection(gaps, folders_per_status)
-    selected_keys = {row["comparison_folder"] for row in selected}
+    recovery_selected = _recovery_selection(
+        recovery_folders, folders_per_status
+    )
+    selected_keys = {
+        row["comparison_folder"] for row in selected + recovery_selected
+    }
     samples = _collect_samples(
         selected_keys, copies, review, comparison_files, files_per_section
     )
@@ -301,6 +387,15 @@ def generate(
             f'''<tr data-status="{html.escape(status)}"><td data-sort="{html.escape(row['primary_folder'], quote=True)}"><a class="path" href="{html.escape(page_directory.name)}/{html.escape(page)}">{html.escape(row['primary_folder'])}</a></td><td class="path" data-sort="{html.escape(row['backup_folder'], quote=True)}">{html.escape(row['backup_folder'])}</td><td class="status {html.escape(status)}" data-sort="{STATUS_SORT.get(status, 99)}">{html.escape(STATUS_LABELS.get(status,status))}</td><td class="coverage" data-sort="{coverage}"><b>{coverage:.1f}%</b><div class="track"><div class="fill" style="width:{coverage:.1f}%"></div></div></td><td data-sort="{int(row['backed_up_bytes'])}">{int(row['backed_up_files']):,}<br><span class="muted">{_size(int(row['backed_up_bytes']))}</span></td><td data-sort="{int(row['copy_candidate_bytes'])}">{int(row['copy_candidate_files']):,}<br><span class="muted">{_size(int(row['copy_candidate_bytes']))}</span></td><td data-sort="{int(row['relocated_candidate_bytes'])}">{int(row['relocated_candidate_files']):,}<br><span class="muted">{_size(int(row['relocated_candidate_bytes']))}</span></td><td data-sort="{int(row['conflict_files'])}">{int(row['conflict_files']):,}</td><td data-sort="{html.escape(row['approval_status'], quote=True)}">{html.escape(row['approval_status'])}</td></tr>'''
         )
 
+    recovery_rows: list[str] = []
+    for row in recovery_selected:
+        _recovery_detail_page(output, page_directory, row, samples, notice)
+        status = row["status"]
+        page = f"{row['folder_id'].casefold()}.html"
+        recovery_rows.append(
+            f'''<tr data-recovery-status="{html.escape(status)}"><td data-sort="{html.escape(row['backup_folder'], quote=True)}"><a class="path" href="{html.escape(page_directory.name)}/{html.escape(page)}">{html.escape(row['backup_folder'])}</a></td><td class="status {html.escape(status)}" data-sort="{RECOVERY_STATUS_SORT.get(status, 99)}">{html.escape(RECOVERY_STATUS_LABELS.get(status,status))}</td><td data-sort="{int(row['backup_only_bytes'])}">{int(row['backup_only_files']):,}<br><span class="muted">{_size(int(row['backup_only_bytes']))}</span></td><td data-sort="{int(row['recovery_review_bytes'])}">{int(row['recovery_review_files']):,}<br><span class="muted">{_size(int(row['recovery_review_bytes']))}</span></td><td data-sort="{int(row['relocated_candidate_bytes'])}">{int(row['relocated_candidate_files']):,}<br><span class="muted">{_size(int(row['relocated_candidate_bytes']))}</span></td><td data-sort="{int(row['latest_modified_ns'])}">{_time(row['latest_modified_ns'])}</td><td data-sort="{html.escape(row['review_status'], quote=True)}">{html.escape(row['review_status'])}</td></tr>'''
+        )
+
     coverage = summary["coverage"]
     primary = summary["primary"]
     backup = summary["backup"]
@@ -308,12 +403,15 @@ def generate(
     body = f'''<h1>File Tidy Backup Sync</h1><p class="muted">{html.escape(primary['label'])} is the Primary; {html.escape(backup['label'])} is the Backup.</p><div class="notice">{html.escape(notice)}</div>{definitions}
 <section class="cards"><div class="card">Primary selected<b>{int(primary['files']):,} files</b><span>{_size(int(primary['bytes']))}</span></div><div class="card">Backed up at expected path<b>{coverage['byte_coverage_pct']}%</b><span>{int(coverage['backed_up_files']):,} files / {_size(int(coverage['backed_up_bytes']))}</span></div><div class="card">Ready to copy<b>{int(coverage['copy_candidate_files']):,} files</b><span>{_size(int(coverage['copy_candidate_bytes']))}</span></div><div class="card">Relocated review<b>{int(coverage['relocated_candidate_files']):,} files</b><span>{_size(int(coverage['relocated_candidate_bytes']))}</span></div><div class="card">Path conflicts<b>{int(coverage['conflict_files']):,}</b><span>{_size(int(coverage['conflict_bytes']))}</span></div><div class="card">Backup-only review<b>{int(coverage['backup_only_files']):,} files</b><span>{_size(int(coverage['backup_only_bytes']))}</span></div></section>
 <details open><summary>Folder Details — Backup Gaps</summary><p class="muted">Ranked by unambiguous copy-candidate bytes. Open a Primary folder to inspect the bounded file evidence. Combined count-and-size columns sort by bytes.</p><div class="toolbar"><button class="active" data-filter="all" onclick="setFolderStatus('all',this)">All</button><button data-filter="needs_sync" onclick="setFolderStatus('needs_sync',this)">Needs sync</button><button data-filter="needs_sync_and_review" onclick="setFolderStatus('needs_sync_and_review',this)">Sync and review</button><button data-filter="review_required" onclick="setFolderStatus('review_required',this)">Review</button><button data-filter="backed_up" onclick="setFolderStatus('backed_up',this)">Backed up</button><input id="folder-search" type="search" placeholder="Filter folders" oninput="filterFolders()"></div><div class="table-wrap"><table id="folder-gaps"><thead><tr><th>{_sort_header('Primary folder','folder-gaps',0)}</th><th>{_sort_header('Backup folder','folder-gaps',1)}</th><th>{_sort_header('Status','folder-gaps',2,'status')}</th><th>{_sort_header('Byte coverage','folder-gaps',3,'number')}</th><th>{_sort_header('Backed up','folder-gaps',4,'number')}</th><th>{_sort_header('Ready to copy','folder-gaps',5,'number',direction='desc')}</th><th>{_sort_header('Relocated review','folder-gaps',6,'number')}</th><th>{_sort_header('Conflicts','folder-gaps',7,'number')}</th><th>{_sort_header('Decision','folder-gaps',8)}</th></tr></thead><tbody>{''.join(folder_rows)}</tbody></table></div><p class="muted">Showing {len(selected):,} ranked folder rows from {len(gaps):,}; complete data remains in {html.escape(str(gaps_csv))}.</p></details>
+<details open><summary>Cold Store-only — Recovery Review</summary><p class="muted">Folders present only on the Backup, ranked by total size. Review them for restoration, intentional cold-only retention, or possible relocation. Recursive rows overlap with their parents.</p><div class="toolbar"><button class="active" data-recovery-filter="all" onclick="setRecoveryStatus('all',this)">All</button><button data-recovery-filter="recovery_review" onclick="setRecoveryStatus('recovery_review',this)">Recovery</button><button data-recovery-filter="relocation_review" onclick="setRecoveryStatus('relocation_review',this)">Relocation</button><button data-recovery-filter="recovery_and_relocation_review" onclick="setRecoveryStatus('recovery_and_relocation_review',this)">Mixed</button><input id="recovery-search" type="search" placeholder="Filter Cold Store folders" oninput="filterRecovery()"></div><div class="table-wrap"><table id="recovery-folders"><thead><tr><th>{_sort_header('Cold Store folder','recovery-folders',0)}</th><th>{_sort_header('Status','recovery-folders',1,'status')}</th><th>{_sort_header('Cold Store only','recovery-folders',2,'number',direction='desc')}</th><th>{_sort_header('Recovery review','recovery-folders',3,'number')}</th><th>{_sort_header('Possible relocated','recovery-folders',4,'number')}</th><th>{_sort_header('Latest modified','recovery-folders',5,'number')}</th><th>{_sort_header('Decision','recovery-folders',6)}</th></tr></thead><tbody>{''.join(recovery_rows)}</tbody></table></div><p class="muted">Showing {len(recovery_selected):,} ranked folder rows from {len(recovery_folders):,}; complete data remains in {html.escape(str(backup_only_folders_csv))}.</p></details>
 <details><summary>Plan roots and local evidence</summary><table><tbody><tr><th>Primary selected root</th><td class="path">{html.escape(primary['selected_root'])}</td></tr><tr><th>Backup selected root</th><td class="path">{html.escape(backup['selected_root'])}</td></tr><tr><th>Copy candidates CSV</th><td class="path">{html.escape(str(copy_csv))}</td></tr><tr><th>Review CSV</th><td class="path">{html.escape(str(review_csv))}</td></tr></tbody></table></details>
-<script>{SORT_SCRIPT}let folderStatus='all';function setFolderStatus(status,button){{folderStatus=status;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.remove('active'));button.classList.add('active');filterFolders();}}function filterFolders(){{const q=document.getElementById('folder-search').value.toLowerCase();document.querySelectorAll('#folder-gaps tbody tr').forEach(row=>{{const statusOk=folderStatus==='all'||row.dataset.status===folderStatus;const textOk=row.textContent.toLowerCase().includes(q);row.hidden=!(statusOk&&textOk);}});}}</script>'''
+<script>{SORT_SCRIPT}let folderStatus='all';let recoveryStatus='all';function setFolderStatus(status,button){{folderStatus=status;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.remove('active'));button.classList.add('active');filterFolders();}}function filterFolders(){{const q=document.getElementById('folder-search').value.toLowerCase();document.querySelectorAll('#folder-gaps tbody tr').forEach(row=>{{const statusOk=folderStatus==='all'||row.dataset.status===folderStatus;const textOk=row.textContent.toLowerCase().includes(q);row.hidden=!(statusOk&&textOk);}});}}function setRecoveryStatus(status,button){{recoveryStatus=status;document.querySelectorAll('[data-recovery-filter]').forEach(item=>item.classList.remove('active'));button.classList.add('active');filterRecovery();}}function filterRecovery(){{const q=document.getElementById('recovery-search').value.toLowerCase();document.querySelectorAll('#recovery-folders tbody tr').forEach(row=>{{const statusOk=recoveryStatus==='all'||row.dataset.recoveryStatus===recoveryStatus;const textOk=row.textContent.toLowerCase().includes(q);row.hidden=!(statusOk&&textOk);}});}}</script>'''
     document = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>File Tidy Backup Sync</title><style>{STYLE}</style></head><body>{body}</body></html>'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
-    return len(selected), len(list(page_directory.glob("*.html")))
+    return len(selected) + len(recovery_selected), len(
+        list(page_directory.glob("*.html"))
+    )
 
 
 def main() -> int:
@@ -322,6 +420,7 @@ def main() -> int:
     parser.add_argument("--gaps", type=Path)
     parser.add_argument("--copy-candidates", type=Path)
     parser.add_argument("--review", type=Path)
+    parser.add_argument("--backup-only-folders", type=Path)
     parser.add_argument("--comparison-files", type=Path)
     parser.add_argument("--notice", default=(
         "Planning data only. Confirm both inventories are current before approving any copy operation."
@@ -336,6 +435,7 @@ def main() -> int:
         gaps_csv=args.gaps,
         copy_csv=args.copy_candidates,
         review_csv=args.review,
+        backup_only_folders_csv=args.backup_only_folders,
         comparison_files=args.comparison_files,
         notice=args.notice,
     )
