@@ -29,6 +29,7 @@ The initial prototype focuses on local folders and accessible NAS shares so that
 - [x] Storage usage charts
 - [x] Read-only comparison of two completed inventories, including exact-path states and relocated filename-and-size candidates
 - [x] Interactive cross-drive comparison report with Master/Secondary folder candidates, drill-down evidence, bounded file tables, and local file links
+- [x] Read-only Backup Sync planning with recursive backup gaps, unique copy candidates, and separate conflict, relocated-file, and Backup-only review queues
 - [ ] Overall storage dashboard: make `index.html` summarize the complete inventory by category, file type, size band, and meaningful folder, with an include/exclude-trash control and links to duplicate and folder reports.
 - [x] Drive-wide duplicate candidate tables and interactive evidence reports
 - [ ] Duplicate confirmation: compare meaningful ancestor context so generic folder names such as `Inbox` do not join unrelated collections, then hash selected candidate files before automated deletion recommendations.
@@ -145,6 +146,24 @@ python -m main.inventory_compare_report \
 ```
 
 The HTML shows full and selected inventory totals, root mappings, exclusions, and a folder table using the Primary drive as Master and Backup folders as Secondaries. Each folder candidate links to file-type and matching-file evidence. Complete filename-and-size coverage advances a folder to full hash verification; it does not authorize deletion. Exact-path conflicts, one-sided files, and different-path candidates follow the folder section. Large tables are deliberately bounded in HTML; their complete evidence remains in the local CSV files.
+
+Build a read-only Backup Sync plan from the completed cross-drive comparison:
+
+```bash
+python -m main.backup_sync scan-results/cross-drive-summary.json
+```
+
+The planner validates the complete file evidence against the comparison summary before writing three local outputs: recursive folder-level backup gaps, unique Primary-only copy candidates, and a review queue for conflicts, Backup-only files, and possible relocated matches. Files that may already exist elsewhere on the Backup are held for verification instead of being copied again. Folder totals are recursive and therefore overlap; the file-level copy candidates remain unique. This stage never invokes `rsync`, copies files, or deletes files. A later approval stage will turn selected folder decisions into a filename-robust `rsync` manifest and summarized dry run.
+
+Generate the separate Backup Sync report:
+
+```bash
+python -m main.backup_sync_report \
+  scan-results/backup-sync-summary.json \
+  --output scan-results/backup-sync.html
+```
+
+The report puts overall backup health and folder-level gaps first. It distinguishes files ready to copy from possible relocated matches, different-size conflicts, already-backed-up paths, and Backup-only recovery candidates. Each displayed folder opens a bounded evidence page. Status and text filters operate locally in the generated HTML, while complete data remains in the plan CSV files.
 
 Keep your actual connection details and personal folder names in `config.local.json`, which is ignored by Git. Keep passwords in the system credential manager or an interactive authentication prompt. Store local inventories and reports in the ignored `local-data/` or `scan-results/` directories.
 
